@@ -28,6 +28,7 @@ from torch.utils.data import DataLoader, Sampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
+from data import InteDataset
 from data import ArgoTestDataset
 from utils import Logger, load_pretrain
 
@@ -66,6 +67,7 @@ def main():
 
     # Data loader for evaluation
     dataset = ArgoTestDataset(args.split, config, train=False)
+    # dataset = InteDataset('/media/drl/datas/zyk/interaction_gyt/preprocess_result/val/')
     data_loader = DataLoader(
         dataset,
         batch_size=config["val_batch_size"],
@@ -84,10 +86,20 @@ def main():
         with torch.no_grad():
             output = net(data)
             results = [x[0:1].detach().cpu().numpy() for x in output["reg"]]
+
         for i, (argo_idx, pred_traj) in enumerate(zip(data["argo_id"], results)):
             preds[argo_idx] = pred_traj.squeeze()
             cities[argo_idx] = data["city"][i]
+            # cities[argo_idx] = "Test"
+
             gts[argo_idx] = data["gt_preds"][i][0] if "gt_preds" in data else None
+
+        # for i, (argo_idx, pred_traj) in enumerate(zip(data["argo_id"], results)):
+        #     preds[argo_idx] = pred_traj.squeeze()
+        #     cities[argo_idx] = data["city"][i]
+        #     # cities[argo_idx] = "Test"
+        #
+        #     gts[argo_idx] = data["gt_preds"][i][0] if "gt_preds" in data else None
 
     # save for further visualization
     res = dict(
@@ -95,7 +107,7 @@ def main():
         gts = gts,
         cities = cities,
     )
-    # torch.save(res,f"{config['save_dir']}/results.pkl")
+    torch.save(res,f"{config['save_dir']}/results.pkl")
     
     # evaluate or submit
     if args.split == "val":

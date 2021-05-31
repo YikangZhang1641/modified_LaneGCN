@@ -28,7 +28,8 @@ from torch.utils.data.distributed import DistributedSampler
 from utils import Logger, load_pretrain
 
 from mpi4py import MPI
-
+from data import InteDataset
+from helper import PreprocessDataset
 
 comm = MPI.COMM_WORLD
 hvd.init()
@@ -115,7 +116,9 @@ def main():
                 shutil.copy(os.path.join(src_dir, f), os.path.join(dst_dir, f))
 
     # Data loader for training
-    dataset = Dataset(config["train_split"], config, train=True)
+    # dataset = Dataset(config["train_split"], config, train=True)
+    dataset = InteDataset('/media/drl/datas/zyk/interaction_gyt/preprocess_results/train/')
+
     train_sampler = DistributedSampler(
         dataset, num_replicas=hvd.size(), rank=hvd.rank()
     )
@@ -131,7 +134,8 @@ def main():
     )
 
     # Data loader for evaluation
-    dataset = Dataset(config["val_split"], config, train=False)
+    # dataset = Dataset(config["val_split"], config, train=False)
+    dataset = InteDataset('/media/drl/datas/zyk/interaction_gyt/preprocess_results/val/')
     val_sampler = DistributedSampler(dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = DataLoader(
         dataset,
@@ -178,6 +182,7 @@ def train(epoch, config, train_loader, net, loss, post_process, opt, val_loader=
 
         output = net(data)
         loss_out = loss(output, data)
+        loss_out['loss'] = loss_out['loss'].type(torch.FloatTensor)
         post_out = post_process(output, data)
         post_process.append(metrics, loss_out, post_out)
 

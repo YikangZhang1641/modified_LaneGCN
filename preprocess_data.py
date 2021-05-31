@@ -20,6 +20,7 @@ import torch
 from torch.utils.data import DataLoader
 from data import ArgoDataset as Dataset, from_numpy, ref_copy, collate_fn
 from utils import Logger, load_pretrain, gpu
+from helper import preprocess, to_long
 
 os.umask(0)
 
@@ -44,17 +45,17 @@ def main():
     config, *_ = model.get_model()
 
     config["preprocess"] = False  # we use raw data to generate preprocess data
-    config["val_workers"] = 32
-    config["workers"] = 32
+    config["val_workers"] = 0
+    config["workers"] = 0
     config['cross_dist'] = 6
     config['cross_angle'] = 0.5 * np.pi
 
-    os.makedirs(os.path.dirname(config['preprocess_train']),exist_ok=True)    
+    # os.makedirs(os.path.dirname(config['preprocess_train']),exist_ok=True)    
 
 
 
-    val(config)
-    test(config)
+    # val(config)
+    # test(config)
     train(config)
 
 
@@ -110,7 +111,7 @@ def train(config):
         pin_memory=True,
         drop_last=False)
 
-    modify(config, data_loader,config["preprocess_train"])
+    modify(config, data_loader, config["preprocess_train"])
 
 
 def val(config):
@@ -412,4 +413,5 @@ def worker_init_fn(pid):
 
 
 if __name__ == "__main__":
+    print("123")
     main()

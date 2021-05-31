@@ -18,7 +18,7 @@ from utils import gpu, to_long,  Optimizer, StepLR
 from layers import Conv1d, Res1d, Linear, LinearRes, Null
 from numpy import float64, ndarray
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
-
+torch.set_default_tensor_type(torch.FloatTensor)
 
 file_path = os.path.abspath(__file__)
 root_path = os.path.dirname(file_path)
@@ -31,7 +31,7 @@ config["display_iters"] = 205942
 config["val_iters"] = 205942 * 2
 config["save_freq"] = 1.0
 config["epoch"] = 0
-config["horovod"] = True
+config["horovod"] = False
 config["opt"] = "adam"
 config["num_epochs"] = 36
 config["lr"] = [1e-3, 1e-4]
@@ -64,7 +64,8 @@ config["test_split"] = os.path.join(root_path, "dataset/test_obs/data")
 # Preprocessed Dataset
 config["preprocess"] = True # whether use preprocess or not
 config["preprocess_train"] = os.path.join(
-    root_path, "dataset","preprocess", "train_crs_dist6_angle90.p"
+    # root_path, "dataset","preprocess", "train_crs_dist6_angle90.p"
+    root_path, "dataset", "preprocess", "val_crs_dist6_angle90.p"
 )
 config["preprocess_val"] = os.path.join(
     root_path,"dataset", "preprocess", "val_crs_dist6_angle90.p"
@@ -185,7 +186,8 @@ def graph_gather(graphs):
     graph["idcs"] = node_idcs
     graph["ctrs"] = [x["ctrs"] for x in graphs]
 
-    for key in ["feats", "turn", "control", "intersect"]:
+    # for key in ["feats", "turn", "control", "intersect"]:
+    for key in ["feats"]:
         graph[key] = torch.cat([x[key] for x in graphs], 0)
 
     for k1 in ["pre", "suc"]:
@@ -376,7 +378,7 @@ class A2M(nn.Module):
         ng = 1
 
         """fuse meta, static, dyn"""
-        self.meta = Linear(n_map + 4, n_map, norm=norm, ng=ng)
+        self.meta = Linear(n_map, n_map, norm=norm, ng=ng)
         att = []
         for i in range(2):
             att.append(Att(n_map, config["n_actor"]))
@@ -384,15 +386,16 @@ class A2M(nn.Module):
 
     def forward(self, feat: Tensor, graph: Dict[str, Union[List[Tensor], Tensor, List[Dict[str, Tensor]], Dict[str, Tensor]]], actors: Tensor, actor_idcs: List[Tensor], actor_ctrs: List[Tensor]) -> Tensor:
         """meta, static and dyn fuse using attention"""
-        meta = torch.cat(
-            (
-                graph["turn"],
-                graph["control"].unsqueeze(1),
-                graph["intersect"].unsqueeze(1),
-            ),
-            1,
-        )
-        feat = self.meta(torch.cat((feat, meta), 1))
+        # meta = torch.cat(
+        #     (
+        #         graph["turn"],
+        #         graph["control"].unsqueeze(1),
+        #         graph["intersect"].unsqueeze(1),
+        #     ),
+        #     1,
+        # )
+        # feat = self.meta(torch.cat((feat, meta), 1))
+        feat = self.meta(feat)
 
         for i in range(len(self.att)):
             feat = self.att[i](
@@ -804,6 +807,10 @@ class PredLoss(nn.Module):
             reg[has_preds], gt_preds[has_preds]
         )
         loss_out["num_reg"] += has_preds.sum().item()
+
+        # loss_out["cls_loss"] = loss_out["cls_loss"].type(torch.FloatTensor)
+        # loss_out["reg_loss"] = loss_out["reg_loss"].type(torch.FloatTensor)
+
         return loss_out
 
 
@@ -815,9 +822,9 @@ class Loss(nn.Module):
 
     def forward(self, out: Dict, data: Dict) -> Dict:
         loss_out = self.pred_loss(out, gpu(data["gt_preds"]), gpu(data["has_preds"]))
-        loss_out["loss"] = loss_out["cls_loss"] / (
+        loss_out["loss"] = (loss_out["cls_loss"] / (
             loss_out["num_cls"] + 1e-10
-        ) + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10)
+        ) + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10))
         return loss_out
 
 

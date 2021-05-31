@@ -1,0 +1,8 @@
+results
+.idea/
+._map_files
+.ipynb_checkpoints/
+__pycache__/
+dataset/
+hd_maps.tar.gz
+map_files/

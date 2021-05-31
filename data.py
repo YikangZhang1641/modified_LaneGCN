@@ -11,6 +11,47 @@ import copy
 from argoverse.data_loading.argoverse_forecasting_loader import ArgoverseForecastingLoader
 from argoverse.map_representation.map_api import ArgoverseMap
 from skimage.transform import rotate
+import pickle
+from helper import preprocess, to_long
+from utils import gpu
+
+class InteDataset(Dataset):
+    def __init__(self, rootdir='/media/drl/datas/zyk/interaction_gyt/preprocess_result/'):
+        self.rootdir = rootdir
+        self.filenames = os.listdir(rootdir)
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        filepath = self.rootdir + self.filenames[idx]
+        f = open(filepath, 'rb')
+        data = pickle.load(f, encoding="latin1")
+        data['feats'] = data['feats'].astype('float32')
+        data['orig'] = data['orig'].astype('float32')
+        data['theta'] = data['theta'].astype('float32')
+        data['trajs'] = data['trajs'].astype('float32')
+
+        graph = preprocess(to_long(gpu(data['graph'])), 6) #self.config['cross_dist']为6
+        data['graph']['left'] = graph['left']
+        data['graph']['right'] = graph['right']
+
+        for s in ['pre', 'suc']:
+            for t in ['u', 'v']:
+                data['graph'][s][0][t] = data['graph'][s][0][t].astype('int16')
+        data['graph']['lane_idcs'] = data['graph']['lane_idcs'].astype('int16')
+
+        data['graph']['left_pairs'] = torch.tensor(data['graph']['left_pairs'])
+        data['graph']['right_pairs'] = torch.tensor(data['graph']['right_pairs'])
+        data['graph']['pre_pairs'] = torch.tensor(data['graph']['pre_pairs'])
+        data['graph']['suc_pairs'] = torch.tensor(data['graph']['suc_pairs'])
+
+
+        data['graph']['idx'] = data['idx']
+
+        # data['argo_id'] = int(self.avl.seq_list[idx].name[:-4])  # 160547
+
+        return data
 
 
 class ArgoDataset(Dataset):
@@ -356,6 +397,45 @@ class ArgoDataset(Dataset):
             else:
                 graph[key] += dilated_nbrs(graph[key][0], graph['num_nodes'], self.config['num_scales'])
         return graph
+
+
+class InteTestDataset(Dataset):
+    def __init__(self, rootdir='/media/drl/datas/zyk/interaction_gyt/preprocess_result/'):
+        self.rootdir = rootdir
+        self.filenames = os.listdir(rootdir)
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        filepath = self.rootdir + self.filenames[idx]
+        f = open(filepath, 'rb')
+        data = pickle.load(f, encoding="latin1")
+        data['feats'] = data['feats'].astype('float32')
+        data['orig'] = data['orig'].astype('float32')
+        data['theta'] = data['theta'].astype('float32')
+        data['trajs'] = data['trajs'].astype('float32')
+
+        graph = preprocess(to_long(gpu(data['graph'])), 6)  # self.config['cross_dist']为6
+        data['graph']['left'] = graph['left']
+        data['graph']['right'] = graph['right']
+
+        for s in ['pre', 'suc']:
+            for t in ['u', 'v']:
+                data['graph'][s][0][t] = data['graph'][s][0][t].astype('int16')
+        data['graph']['lane_idcs'] = data['graph']['lane_idcs'].astype('int16')
+
+        data['graph']['left_pairs'] = torch.tensor(data['graph']['left_pairs'])
+        data['graph']['right_pairs'] = torch.tensor(data['graph']['right_pairs'])
+        data['graph']['pre_pairs'] = torch.tensor(data['graph']['pre_pairs'])
+        data['graph']['suc_pairs'] = torch.tensor(data['graph']['suc_pairs'])
+
+        data['graph']['idx'] = data['idx']
+
+        # data['argo_id'] = int(self.avl.seq_list[idx].name[:-4])  # 160547
+
+        return data
+
 
 
 class ArgoTestDataset(ArgoDataset):
