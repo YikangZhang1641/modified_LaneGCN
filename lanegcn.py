@@ -20,6 +20,8 @@ from numpy import float64, ndarray
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 torch.set_default_tensor_type(torch.FloatTensor)
 
+from helper import InteDataset
+
 file_path = os.path.abspath(__file__)
 root_path = os.path.dirname(file_path)
 model_name = os.path.basename(file_path).split(".")[0]
@@ -917,4 +919,4 @@ def get_model():
     opt = Optimizer(params, config)
 
 
-    return config, ArgoDataset, collate_fn, net, loss, post_process, opt
+    return config, InteDataset, collate_fn, net, loss, post_process, opt

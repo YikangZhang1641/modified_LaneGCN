@@ -132,7 +132,7 @@ def compute_joint_metrics(prediction, truth, input_dict, miss_threshold=2.0):
     print("joint prediction metrics ----------------------------")
 
     device = torch.device("cuda")
-    indices = torch.arange(prediction.shape[0])
+    indices = torch.arange(prediction.shape[0], device=prediction.get_device())
     timesteps = prediction.shape[3]
     agent_num = prediction.shape[2]
     threshold_matrix = (torch.ones(prediction.shape[0], 1) * miss_threshold).to(device)
