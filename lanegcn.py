@@ -20,6 +20,8 @@ from numpy import float64, ndarray
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 torch.set_default_tensor_type(torch.FloatTensor)
 
+from data import InteDataset
+
 file_path = os.path.abspath(__file__)
 root_path = os.path.dirname(file_path)
 model_name = os.path.basename(file_path).split(".")[0]
@@ -81,7 +83,7 @@ config["n_map"] = 128
 config["actor2map_dist"] = 7.0
 config["map2actor_dist"] = 6.0
 config["actor2actor_dist"] = 100.0
-config["pred_size"] = 30
+config["pred_size"] = 70
 config["pred_step"] = 1
 config["num_preds"] = config["pred_size"] // config["pred_step"]
 config["num_mods"] = 6
@@ -917,4 +919,4 @@ def get_model():
     opt = Optimizer(params, config)
 
 
-    return config, ArgoDataset, collate_fn, net, loss, post_process, opt
+    return config, InteDataset, collate_fn, net, loss, post_process, opt
