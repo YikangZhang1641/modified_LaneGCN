@@ -35,7 +35,7 @@ config["save_freq"] = 1.0
 config["epoch"] = 0
 config["horovod"] = True
 config["opt"] = "adam"
-config["num_epochs"] = 36
+config["num_epochs"] = 50
 config["lr"] = [1e-3, 1e-4]
 config["lr_epochs"] = [32]
 config["lr_func"] = StepLR(config["lr"], config["lr_epochs"])
@@ -49,9 +49,9 @@ if "save_dir" not in config:
 if not os.path.isabs(config["save_dir"]):
     config["save_dir"] = os.path.join(root_path, "results", config["save_dir"])
 
-config["batch_size"] = 32
-config["val_batch_size"] = 32
-config["workers"] = 0
+config["batch_size"] = 16
+config["val_batch_size"] = 16
+config["workers"] = 16
 config["val_workers"] = config["workers"]
 
 
@@ -83,7 +83,7 @@ config["n_map"] = 128
 config["actor2map_dist"] = 7.0
 config["map2actor_dist"] = 6.0
 config["actor2actor_dist"] = 100.0
-config["pred_size"] = 70
+config["pred_size"] = 80
 config["pred_step"] = 1
 config["num_preds"] = config["pred_size"] // config["pred_step"]
 config["num_mods"] = 6
@@ -908,7 +908,11 @@ def pred_metrics(preds, gt_preds, has_preds):
     return ade1, fde1, ade, fde, min_idcs
 
 
-def get_model():
+def get_model(pred_size=None):
+    if pred_size:
+        config["pred_size"] = pred_size
+        config["num_preds"] = config["pred_size"] // config["pred_step"]
+
     net = Net(config)
     net = net.cuda()
 
