@@ -117,7 +117,7 @@ def main():
 
     # Data loader for training
     # dataset = Dataset(config["train_split"], config, train=True)
-    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s/train/')
+    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s_interp10scale8/train/')
 
     train_sampler = DistributedSampler(
         dataset, num_replicas=hvd.size(), rank=hvd.rank()
@@ -135,7 +135,7 @@ def main():
 
     # Data loader for evaluation
     # dataset = Dataset(config["val_split"], config, train=False)
-    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s/val/')
+    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s_interp10scale8/val/')
     val_sampler = DistributedSampler(dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = DataLoader(
         dataset,

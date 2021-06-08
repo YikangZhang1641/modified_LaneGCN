@@ -50,6 +50,7 @@ class InteDataset(Dataset):
         data['graph']['idx'] = data['idx']
 
         # data['argo_id'] = int(self.avl.seq_list[idx].name[:-4])  # 160547
+        f.close()
 
         return data
 
