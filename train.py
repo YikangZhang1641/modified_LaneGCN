@@ -21,7 +21,8 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Sampler, DataLoader
 import horovod.torch as hvd
-
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 from torch.utils.data.distributed import DistributedSampler
 
@@ -63,6 +64,9 @@ def main():
     args = parser.parse_args()
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
+    
+    data_dir = "/home/user/Datasets/interpolated/preprocess_results_10s_interp10_thr10_scale7"
+    config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
         opt.opt = hvd.DistributedOptimizer(
@@ -117,7 +121,7 @@ def main():
 
     # Data loader for training
     # dataset = Dataset(config["train_split"], config, train=True)
-    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s_interp10scale8/train/')
+    dataset = InteDataset(os.path.join(data_dir, 'train'))
 
     train_sampler = DistributedSampler(
         dataset, num_replicas=hvd.size(), rank=hvd.rank()
@@ -135,7 +139,7 @@ def main():
 
     # Data loader for evaluation
     # dataset = Dataset(config["val_split"], config, train=False)
-    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_10s_interp10scale8/val/')
+    dataset = InteDataset(os.path.join(data_dir, 'val'))
     val_sampler = DistributedSampler(dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = DataLoader(
         dataset,

@@ -29,8 +29,8 @@ model_name = os.path.basename(file_path).split(".")[0]
 ### config ###
 config = dict()
 """Train"""
-config["display_iters"] = 205942
-config["val_iters"] = 205942 * 2
+config["display_iters"] = 312*4*32*2
+config["val_iters"] = 312*4*32*2
 config["save_freq"] = 1.0
 config["epoch"] = 0
 config["horovod"] = True
@@ -49,10 +49,10 @@ if "save_dir" not in config:
 if not os.path.isabs(config["save_dir"]):
     config["save_dir"] = os.path.join(root_path, "results", config["save_dir"])
 
-config["batch_size"] = 32
-config["val_batch_size"] = 32
+config["batch_size"] = 16
+config["val_batch_size"] = 16
 config["workers"] = 0
-config["val_workers"] = config["workers"]
+config["val_workers"] = 0
 
 
 """Dataset"""
@@ -77,7 +77,7 @@ config['preprocess_test'] = os.path.join(root_path, "dataset",'preprocess', 'tes
 """Model"""
 config["rot_aug"] = False
 config["pred_range"] = [-100.0, 100.0, -100.0, 100.0]
-config["num_scales"] = 8
+config["num_scales"] = 7
 config["n_actor"] = 128
 config["n_map"] = 128
 config["actor2map_dist"] = 7.0

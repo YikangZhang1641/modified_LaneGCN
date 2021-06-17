@@ -24,7 +24,7 @@ class InteDataset(Dataset):
         return len(self.filenames)
 
     def __getitem__(self, idx):
-        filepath = self.rootdir + self.filenames[idx]
+        filepath = os.path.join(self.rootdir, self.filenames[idx])
         f = open(filepath, 'rb')
         data = pickle.load(f, encoding="latin1")
         data['feats'] = data['feats'].astype('float32')
@@ -409,7 +409,7 @@ class InteTestDataset(Dataset):
         return len(self.filenames)
 
     def __getitem__(self, idx):
-        filepath = self.rootdir + self.filenames[idx]
+        filepath = os.path.join(data_dir,self.rootdir, self.filenames[idx])
         f = open(filepath, 'rb')
         data = pickle.load(f, encoding="latin1")
         data['feats'] = data['feats'].astype('float32')

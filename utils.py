@@ -4,6 +4,9 @@
 import numpy as np
 import sys
 import cv2
+cv2.setNumThreads(0)
+cv2.ocl.setUseOpenCL(False)
+
 import os
 
 import torch
@@ -66,8 +69,15 @@ def gpu(data):
     """
     if isinstance(data, list) or isinstance(data, tuple):
         data = [gpu(x) for x in data]
+        
     elif isinstance(data, dict):
-        data = {key:gpu(_data) for key,_data in data.items()}
+        data_gpu = {}
+        for key,_data in data.items():
+            if key is "road_polygon":
+                continue
+            data_gpu[key] = gpu(_data)
+        return data_gpu
+
     elif isinstance(data, torch.Tensor):
         data = data.contiguous().cuda(non_blocking=True)
     return data
