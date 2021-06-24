@@ -77,7 +77,7 @@ config['preprocess_test'] = os.path.join(root_path, "dataset",'preprocess', 'tes
 """Model"""
 config["rot_aug"] = False
 config["pred_range"] = [-100.0, 100.0, -100.0, 100.0]
-config["num_scales"] = 7
+config["num_scales"] = 6
 config["n_actor"] = 128
 config["n_map"] = 128
 config["actor2map_dist"] = 7.0
