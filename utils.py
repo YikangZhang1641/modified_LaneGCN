@@ -73,8 +73,8 @@ def gpu(data):
     elif isinstance(data, dict):
         data_gpu = {}
         for key,_data in data.items():
-            if key is "road_polygon":
-                continue
+            # if key is "road_polygon":
+            #     continue
             data_gpu[key] = gpu(_data)
         return data_gpu
 

@@ -4,10 +4,9 @@
 
 import os
 
-os.umask(0)
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+
+import horovod.torch as hvd
+
 import argparse
 import numpy as np
 import random
@@ -19,18 +18,33 @@ from numbers import Number
 
 from tqdm import tqdm
 import torch
+
+
+
+from multiprocessing import cpu_count
+
+# cpu_num = cpu_count() # 自动获取最大核心数目
+cpu_num = 4
+os.environ ['OMP_NUM_THREADS'] = str(cpu_num)
+os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
+os.environ ['MKL_NUM_THREADS'] = str(cpu_num)
+os.environ ['VECLIB_MAXIMUM_THREADS'] = str(cpu_num)
+os.environ ['NUMEXPR_NUM_THREADS'] = str(cpu_num)
+torch.set_num_threads(cpu_num)
+
+
+
 from torch.utils.data import Sampler, DataLoader
-import horovod.torch as hvd
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 from torch.utils.data.distributed import DistributedSampler
 
-from utils import Logger, load_pretrain
+from utils import Logger, load_pretrain, gpu
 
 from mpi4py import MPI
 from data import InteDataset
-from helper import PreprocessDataset
+from helper import data_prefetcher
 
 comm = MPI.COMM_WORLD
 hvd.init()
@@ -64,8 +78,8 @@ def main():
     args = parser.parse_args()
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
-    
-    data_dir = "/home/user/Datasets/interpolated/preprocess_results_10s_interp10_thr10_scale7"
+
+    data_dir = "/home/user/Datasets/with_theta/preprocess_results_5s_use_traj_psi_small_MA"
     config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
@@ -160,7 +174,8 @@ def main():
 
 
 def worker_init_fn(pid):
-    np_seed = hvd.rank() * 1024 + int(pid)
+    # np_seed = hvd.rank() * 1024 + int(pid)
+    np_seed = 14 * 1024 + int(pid)
     np.random.seed(np_seed)
     random_seed = np.random.randint(2 ** 32 - 1)
     random.seed(random_seed)
@@ -180,7 +195,7 @@ def train(epoch, config, train_loader, net, loss, post_process, opt, val_loader=
 
     start_time = time.time()
     metrics = dict()
-    for i, data in tqdm(enumerate(train_loader),disable=hvd.rank()):
+    for i, data in tqdm(enumerate(train_loader), disable=hvd.rank()):
         epoch += epoch_per_batch
         data = dict(data)
 
@@ -203,8 +218,8 @@ def train(epoch, config, train_loader, net, loss, post_process, opt, val_loader=
         if num_iters % display_iters == 0:
             dt = time.time() - start_time
             metrics = sync(metrics)
-            if hvd.rank() == 0:
-                post_process.display(metrics, dt, epoch, lr)
+            # if hvd.rank() == 0:
+            #     post_process.display(metrics, dt, epoch, lr)
             start_time = time.time()
             metrics = dict()
 
@@ -221,7 +236,7 @@ def val(config, data_loader, net, loss, post_process, epoch):
 
     start_time = time.time()
     metrics = dict()
-    for i, data in enumerate(data_loader):
+    for i, data in tqdm(enumerate(data_loader), disable=hvd.rank()):
         data = dict(data)
         with torch.no_grad():
             output = net(data)

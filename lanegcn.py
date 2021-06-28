@@ -29,8 +29,8 @@ model_name = os.path.basename(file_path).split(".")[0]
 ### config ###
 config = dict()
 """Train"""
-config["display_iters"] = 312*4*32*2
-config["val_iters"] = 312*4*32*2
+config["display_iters"] = 192*16*4
+config["val_iters"] = 192*16*4
 config["save_freq"] = 1.0
 config["epoch"] = 0
 config["horovod"] = True
@@ -52,7 +52,7 @@ if not os.path.isabs(config["save_dir"]):
 config["batch_size"] = 16
 config["val_batch_size"] = 16
 config["workers"] = 0
-config["val_workers"] = 0
+config["val_workers"] = config["workers"]
 
 
 """Dataset"""
@@ -83,7 +83,7 @@ config["n_map"] = 128
 config["actor2map_dist"] = 7.0
 config["map2actor_dist"] = 6.0
 config["actor2actor_dist"] = 100.0
-config["pred_size"] = 80
+config["pred_size"] = 30
 config["pred_step"] = 1
 config["num_preds"] = config["pred_size"] // config["pred_step"]
 config["num_mods"] = 6
@@ -129,8 +129,13 @@ class Net(nn.Module):
 
     def forward(self, data: Dict) -> Dict[str, List[Tensor]]:
         # construct actor feature
-        actors, actor_idcs = actor_gather(gpu(data["feats"]))
+        data_feats = gpu(data["feats"])
+        actors, actor_idcs = actor_gather(data_feats)
         actor_ctrs = gpu(data["ctrs"])
+
+        past_cur_states = [data_feats[i][:, -2:, :] for i in range(len(data_feats))]
+
+        ctrs_xy = [actor_ctrs[i][:, :2] for i in range(len(actor_ctrs))]
         actors = self.actor_net(actors)
 
         # construct map features
@@ -138,19 +143,19 @@ class Net(nn.Module):
         nodes, node_idcs, node_ctrs = self.map_net(graph)
 
         # actor-map fusion cycle 
-        nodes = self.a2m(nodes, graph, actors, actor_idcs, actor_ctrs)
+        nodes = self.a2m(nodes, graph, actors, actor_idcs, ctrs_xy)
         nodes = self.m2m(nodes, graph)
-        actors = self.m2a(actors, actor_idcs, actor_ctrs, nodes, node_idcs, node_ctrs)
-        actors = self.a2a(actors, actor_idcs, actor_ctrs)
+        actors = self.m2a(actors, actor_idcs, ctrs_xy, nodes, node_idcs, node_ctrs)
+        actors = self.a2a(actors, actor_idcs, ctrs_xy)
 
         # prediction
-        out = self.pred_net(actors, actor_idcs, actor_ctrs)
-        rot, orig = gpu(data["rot"]), gpu(data["orig"])
-        # transform prediction to world coordinates
-        for i in range(len(out["reg"])):
-            out["reg"][i] = torch.matmul(out["reg"][i], rot[i]) + orig[i].view(
-                1, 1, 1, -1
-            )
+        out = self.pred_net(actors, actor_idcs, past_cur_states, gpu(data["shapes"]))
+        # rot, orig = gpu(data["rot"]), gpu(data["orig"])
+        # # transform prediction to world coordinates
+        # for i in range(len(out["reg"])):
+        #     out["reg"][i] = torch.matmul(out["reg"][i], rot[i]) + orig[i].view(
+        #         1, 1, 1, -1
+        #     )
         return out
 
 
@@ -604,20 +609,49 @@ class PredNet(nn.Module):
             LinearRes(n_actor, n_actor, norm=norm, ng=ng), nn.Linear(n_actor, 1)
         )
 
-    def forward(self, actors: Tensor, actor_idcs: List[Tensor], actor_ctrs: List[Tensor]) -> Dict[str, List[Tensor]]:
+    def forward(self, actors: Tensor, actor_idcs: List[Tensor], past_cur_states: List[Tensor], shapes: List[Tensor]) -> Dict[str, List[Tensor]]:
+        # preds = []
+        # for i in range(len(self.pred)):
+        #     preds.append(self.pred[i](actors))
+        # reg = torch.cat([x.unsqueeze(1) for x in preds], 1)
+        # reg = reg.view(reg.size(0), reg.size(1), -1, 2)
+
+        length = torch.cat(shapes)[:,1].reshape(-1, 1)
         preds = []
+        acc_list = []
+        delta_list = []
+
+        tensor_ctrs = torch.cat(past_cur_states)
         for i in range(len(self.pred)):
-            preds.append(self.pred[i](actors))
+            acc, delta = torch.split(self.pred[i](actors), self.config["num_preds"], dim=1)
+
+            # acc = torch.clamp(acc, min=-0.2, max=0.2)
+            # delta = torch.clamp(delta, min=-np.pi/10, max=np.pi/10)
+
+            vel_init = torch.sqrt(torch.sum((tensor_ctrs[:, -1, :2] - tensor_ctrs[:, -2, :2]) ** 2, dim=1))
+            vel = torch.add(torch.cumsum(acc, dim=1), vel_init.reshape(-1, 1))
+
+            d_psi = torch.mul(vel, torch.tan(delta)) / length
+            psi = torch.add(torch.cumsum(d_psi, dim=1), tensor_ctrs[:, -1, 2].reshape(-1, 1))
+
+            d_x = torch.mul(vel, torch.cos(psi))
+            d_y = torch.mul(vel, torch.sin(psi))
+
+            pred = torch.stack([torch.cumsum(d_x, dim=0), torch.cumsum(d_y, dim=0)], -1) + tensor_ctrs[:, -1, :2].reshape(-1, 1, 2)
+            preds.append(pred)
+            acc_list.append(acc)
+            delta_list.append(delta)
+
         reg = torch.cat([x.unsqueeze(1) for x in preds], 1)
         reg = reg.view(reg.size(0), reg.size(1), -1, 2)
 
-        for i in range(len(actor_idcs)):
-            idcs = actor_idcs[i]
-            ctrs = actor_ctrs[i].view(-1, 1, 1, 2)
-            reg[idcs] = reg[idcs] + ctrs
+        al = torch.cat([x.unsqueeze(1) for x in acc_list], 1)
+        al = al.view(al.size(0), al.size(1), -1, 1)
+        dl = torch.cat([x.unsqueeze(1) for x in delta_list], 1)
+        dl = dl.view(dl.size(0), dl.size(1), -1, 1)
 
         dest_ctrs = reg[:, :, -1].detach()
-        feats = self.att_dest(actors, torch.cat(actor_ctrs, 0), dest_ctrs)
+        feats = self.att_dest(actors, tensor_ctrs[:, -1, :2], dest_ctrs) # maybe add graph centers later
         cls = self.cls(feats).view(-1, self.config["num_mods"])
 
         cls, sort_idcs = cls.sort(1, descending=True)
@@ -628,11 +662,14 @@ class PredNet(nn.Module):
 
         out = dict()
         out["cls"], out["reg"] = [], []
+        out["acc"], out["delta"] = [], []
         for i in range(len(actor_idcs)):
             idcs = actor_idcs[i]
-            ctrs = actor_ctrs[i].view(-1, 1, 1, 2)
+            # ctrs = actor_ctrs[i].view(-1, 1, 1, 2)
             out["cls"].append(cls[idcs])
             out["reg"].append(reg[idcs])
+            out["acc"].append(al[idcs])
+            out["delta"].append(dl[idcs])
         return out
 
 
@@ -750,10 +787,16 @@ class PredLoss(nn.Module):
 
     def forward(self, out: Dict[str, List[Tensor]], gt_preds: List[Tensor], has_preds: List[Tensor]) -> Dict[str, Union[Tensor, int]]:
         cls, reg = out["cls"], out["reg"]
+        acc, delta = out["acc"], out["delta"]
+
         cls = torch.cat([x for x in cls], 0)
         reg = torch.cat([x for x in reg], 0)
-        gt_preds = torch.cat([x for x in gt_preds], 0)
+        gt_preds = torch.cat([x[:, :, :2] for x in gt_preds], 0)
         has_preds = torch.cat([x for x in has_preds], 0)
+
+        acc = torch.cat([x for x in acc], 0)
+        delta = torch.cat([x for x in delta], 0)
+
 
         loss_out = dict()
         zero = 0.0 * (cls.sum() + reg.sum())
@@ -813,6 +856,8 @@ class PredLoss(nn.Module):
         # loss_out["cls_loss"] = loss_out["cls_loss"].type(torch.FloatTensor)
         # loss_out["reg_loss"] = loss_out["reg_loss"].type(torch.FloatTensor)
 
+        loss_out["acc"] = torch.mean(torch.sum(acc**2, dim=2))
+        loss_out["delta"] = torch.mean(torch.sum(delta**2, dim=2))
         return loss_out
 
 
@@ -824,9 +869,10 @@ class Loss(nn.Module):
 
     def forward(self, out: Dict, data: Dict) -> Dict:
         loss_out = self.pred_loss(out, gpu(data["gt_preds"]), gpu(data["has_preds"]))
-        loss_out["loss"] = (loss_out["cls_loss"] / (
-            loss_out["num_cls"] + 1e-10
-        ) + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10))
+        # loss_out["loss"] = (loss_out["cls_loss"] / (
+        #     loss_out["num_cls"] + 1e-10
+        # ) + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10))
+        loss_out["loss"] = loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10) + loss_out["acc"] * 10 + loss_out["delta"] * 10
         return loss_out
 
 
@@ -880,7 +926,7 @@ class PostProcess(nn.Module):
         preds = np.concatenate(metrics["preds"], 0)
         gt_preds = np.concatenate(metrics["gt_preds"], 0)
         has_preds = np.concatenate(metrics["has_preds"], 0)
-        ade1, fde1, ade, fde, min_idcs = pred_metrics(preds, gt_preds, has_preds)
+        ade1, fde1, ade, fde, min_idcs = pred_metrics(preds, gt_preds[:, :, :2], has_preds)
 
         print(
             "loss %2.4f %2.4f %2.4f, ade1 %2.4f, fde1 %2.4f, ade %2.4f, fde %2.4f"
@@ -915,6 +961,8 @@ def get_model(pred_size=None):
 
     net = Net(config)
     net = net.cuda()
+
+    # model = torch.nn.DataParallel(model).cuda()
 
     loss = Loss(config).cuda()
     post_process = PostProcess(config).cuda()
