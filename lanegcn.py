@@ -20,7 +20,7 @@ from numpy import float64, ndarray
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 torch.set_default_tensor_type(torch.FloatTensor)
 
-from helper import InteDataset
+from data import InteDataset
 
 file_path = os.path.abspath(__file__)
 root_path = os.path.dirname(file_path)
@@ -49,8 +49,8 @@ if "save_dir" not in config:
 if not os.path.isabs(config["save_dir"]):
     config["save_dir"] = os.path.join(root_path, "results", config["save_dir"])
 
-config["batch_size"] = 32
-config["val_batch_size"] = 32
+config["batch_size"] = 16
+config["val_batch_size"] = 16
 config["workers"] = 0
 config["val_workers"] = config["workers"]
 

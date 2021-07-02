@@ -4,10 +4,13 @@
 
 import os
 
-os.umask(0)
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+cpu_num = 8
+os.environ ['OMP_NUM_THREADS'] = str(cpu_num)
+os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
+os.environ ['MKL_NUM_THREADS'] = str(cpu_num)
+os.environ ['VECLIB_MAXIMUM_THREADS'] = str(cpu_num)
+os.environ ['NUMEXPR_NUM_THREADS'] = str(cpu_num)
+
 import argparse
 import numpy as np
 import random
@@ -117,7 +120,7 @@ def main():
 
     # Data loader for training
     # dataset = Dataset(config["train_split"], config, train=True)
-    dataset = InteDataset('/media/drl/datas/zyk/interaction_gyt/preprocess_results/train/')
+    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_5s/train/')
 
     train_sampler = DistributedSampler(
         dataset, num_replicas=hvd.size(), rank=hvd.rank()
@@ -135,7 +138,7 @@ def main():
 
     # Data loader for evaluation
     # dataset = Dataset(config["val_split"], config, train=False)
-    dataset = InteDataset('/media/drl/datas/zyk/interaction_gyt/preprocess_results/val/')
+    dataset = InteDataset('/home/user/Datasets/interpolated/preprocess_results_5s/val/')
     val_sampler = DistributedSampler(dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = DataLoader(
         dataset,
