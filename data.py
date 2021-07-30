@@ -29,8 +29,8 @@ class InteDataset(Dataset):
         data = pickle.load(f, encoding="latin1")
         data['feats'] = data['feats'].astype('float32')
         data['orig'] = data['orig'].astype('float32')
-        data['theta'] = data['theta'].astype('float32')
-        data['trajs'] = data['trajs'].astype('float32')
+        data['theta'] = data['theta']
+        # data['trajs'] = data['trajs'].astype('float32')
 
         graph = preprocess(to_long(gpu(data['graph'])), 6) #self.config['cross_dist']为6
         data['graph']['left'] = graph['left']

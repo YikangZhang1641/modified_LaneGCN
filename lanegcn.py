@@ -52,7 +52,7 @@ if not os.path.isabs(config["save_dir"]):
 config["batch_size"] = 16
 config["val_batch_size"] = 16
 config["workers"] = 0
-config["val_workers"] = 0
+config["val_workers"] = config["workers"]
 
 
 """Dataset"""
@@ -748,7 +748,43 @@ class PredLoss(nn.Module):
         self.config = config
         self.reg_loss = nn.SmoothL1Loss(reduction="sum")
 
-    def forward(self, out: Dict[str, List[Tensor]], gt_preds: List[Tensor], has_preds: List[Tensor]) -> Dict[str, Union[Tensor, int]]:
+    def forward(self, out: Dict[str, List[Tensor]], gt_preds: List[Tensor], has_preds: List[Tensor], graph: Dict, rot: List[Tensor], orig: List[Tensor], Lanes: List[List[Tensor]]) -> Dict[str, Union[Tensor, int]]:
+        final_dis = []
+        for idx in range(len(out['reg'])):
+            for vehicle_id in range(out['reg'][idx].shape[0]):
+                for k in range(self.config['num_mods']):
+                    # Lanes = []
+                    # traj = torch.matmul(out['reg'][idx][vehicle_id][k] - orig[idx], rot[idx].T)
+                    traj = out['reg'][idx][vehicle_id][k]
+                    diff = traj[1:] - traj[:-1]
+                    S_pred = torch.sum(torch.sqrt(torch.sum(diff ** 2, axis=1))) * 0.9
+
+                    # map_car0 = graph[idx]['ctrs'] - traj[0]
+                    # ego_graph_id = torch.argmin(torch.sum(map_car0 ** 2, 1))
+                    # self.dfs(graph[idx], ego_graph_id, Lanes, [], 0, S_pred, 0)
+
+                    min_final_dis = []
+                    for Lane in Lanes[idx][vehicle_id]:
+                        if Lane is None:
+                            continue
+                        # min_final_dis.append(torch.sqrt(torch.sum((graph[idx]['ctrs'][Lane[-1]] - traj[-1]) ** 2)))
+                        map_car0 = Lane - traj[0]
+                        lane_start_id = torch.argmin(torch.sum(map_car0 ** 2, 1))
+
+                        if lane_start_id == Lane.shape[0] - 1:
+                            final_pt_on_lane = Lane[-1]
+                        else:
+                            lane = Lane[lane_start_id:]
+                            s = torch.sum((lane[1:] - lane[:-1]) ** 2, axis=1).sqrt().cumsum(0)
+                            s_id = torch.argmin((s - S_pred) ** 2)
+                            final_pt_on_lane = lane[s_id]
+
+                        min_final_dis.append(torch.sqrt(torch.sum((final_pt_on_lane - traj[-1]) ** 2)))
+
+                    final_dis.append(min(min_final_dis))
+        final_dis = torch.Tensor(final_dis).cuda()
+
+
         cls, reg = out["cls"], out["reg"]
         cls = torch.cat([x for x in cls], 0)
         reg = torch.cat([x for x in reg], 0)
@@ -809,9 +845,7 @@ class PredLoss(nn.Module):
             reg[has_preds], gt_preds[has_preds]
         )
         loss_out["num_reg"] += has_preds.sum().item()
-
-        # loss_out["cls_loss"] = loss_out["cls_loss"].type(torch.FloatTensor)
-        # loss_out["reg_loss"] = loss_out["reg_loss"].type(torch.FloatTensor)
+        loss_out["lane_loss"] = 0.01 * torch.sum(final_dis) / (final_dis.shape[0] + 1)
 
         return loss_out
 
@@ -823,10 +857,11 @@ class Loss(nn.Module):
         self.pred_loss = PredLoss(config)
 
     def forward(self, out: Dict, data: Dict) -> Dict:
-        loss_out = self.pred_loss(out, gpu(data["gt_preds"]), gpu(data["has_preds"]))
-        loss_out["loss"] = (loss_out["cls_loss"] / (
-            loss_out["num_cls"] + 1e-10
-        ) + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10))
+        loss_out = self.pred_loss(out, gpu(data["gt_preds"]), gpu(data["has_preds"]), gpu(data['graph']), gpu(data['rot']), gpu(data['orig']), gpu(data['ref_paths']))
+        loss_out["loss"] = (loss_out["cls_loss"] / (loss_out["num_cls"] + 1e-10)
+                            + loss_out["reg_loss"] / (loss_out["num_reg"] + 1e-10)
+                            + loss_out["lane_loss"]
+                            )
         return loss_out
 
 
@@ -883,8 +918,8 @@ class PostProcess(nn.Module):
         ade1, fde1, ade, fde, min_idcs = pred_metrics(preds, gt_preds, has_preds)
 
         print(
-            "loss %2.4f %2.4f %2.4f, ade1 %2.4f, fde1 %2.4f, ade %2.4f, fde %2.4f"
-            % (loss, cls, reg, ade1, fde1, ade, fde)
+            "loss %2.4f %2.4f %2.4f %2.4f, ade1 %2.4f, fde1 %2.4f, ade %2.4f, fde %2.4f"
+            % (loss, cls, reg, metrics["lane_loss"], ade1, fde1, ade, fde)
         )
         print()
 

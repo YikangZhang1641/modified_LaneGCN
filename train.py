@@ -4,10 +4,13 @@
 
 import os
 
-os.umask(0)
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+cpu_num = 8
+os.environ ['OMP_NUM_THREADS'] = str(cpu_num)
+os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
+os.environ ['MKL_NUM_THREADS'] = str(cpu_num)
+os.environ ['VECLIB_MAXIMUM_THREADS'] = str(cpu_num)
+os.environ ['NUMEXPR_NUM_THREADS'] = str(cpu_num)
+
 import argparse
 import numpy as np
 import random
@@ -65,7 +68,7 @@ def main():
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
     
-    data_dir = "/home/user/Datasets/interpolated/preprocess_results_10s_interp10_thr10_scale7"
+    data_dir = "/home/user/Datasets/ref_paths/preprocess_results_10s_ref_path_ignore_no_matches_with_rotation_0721"
     config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
@@ -85,7 +88,7 @@ def main():
 
     if args.eval:
         # Data loader for evaluation
-        dataset = Dataset(config["val_split"], config, train=False)
+        dataset = InteDataset('/home/user/Datasets/ref_paths/preprocess_results_10s_ref_path_ignore_no_matches_csv_pairs_0721/val')
         val_sampler = DistributedSampler(
             dataset, num_replicas=hvd.size(), rank=hvd.rank()
         )
