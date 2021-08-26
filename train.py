@@ -10,6 +10,7 @@ os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
 os.environ ['MKL_NUM_THREADS'] = str(cpu_num)
 os.environ ['VECLIB_MAXIMUM_THREADS'] = str(cpu_num)
 os.environ ['NUMEXPR_NUM_THREADS'] = str(cpu_num)
+os.environ ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3"
 
 import argparse
 import numpy as np
@@ -34,6 +35,7 @@ from utils import Logger, load_pretrain
 from mpi4py import MPI
 from data import InteDataset
 from helper import PreprocessDataset
+from tensorboardX import SummaryWriter
 
 comm = MPI.COMM_WORLD
 hvd.init()
@@ -55,7 +57,6 @@ parser.add_argument(
     "--weight", default="", type=str, metavar="WEIGHT", help="checkpoint path"
 )
 
-
 def main():
     seed = hvd.rank()
     torch.manual_seed(seed)
@@ -68,7 +69,7 @@ def main():
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
     
-    data_dir = "/home/user/Datasets/ref_paths/preprocess_results_10s_ref_path_ignore_no_matches_with_rotation_0721"
+    data_dir = "/home/user/Projects/interaction_gyt/preprocess_results_10s_for_training_EEMG"
     config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
@@ -88,7 +89,7 @@ def main():
 
     if args.eval:
         # Data loader for evaluation
-        dataset = InteDataset('/home/user/Datasets/ref_paths/preprocess_results_10s_ref_path_ignore_no_matches_csv_pairs_0721/val')
+        dataset = InteDataset('/home/user/Projects/interaction_gyt/preprocess_results_10s_use_csv_EP0/test')
         val_sampler = DistributedSampler(
             dataset, num_replicas=hvd.size(), rank=hvd.rank()
         )
@@ -108,6 +109,7 @@ def main():
     # Create log and copy all code
     save_dir = config["save_dir"]
     log = os.path.join(save_dir, "log")
+    writer = SummaryWriter(os.path.join(save_dir, 'exp'))
     if hvd.rank() == 0:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -159,7 +161,7 @@ def main():
     epoch = config["epoch"]
     remaining_epochs = int(np.ceil(config["num_epochs"] - epoch))
     for i in range(remaining_epochs):
-        train(epoch + i, config, train_loader, net, loss, post_process, opt, val_loader)
+        train(epoch + i, config, train_loader, net, loss, post_process, opt, writer, val_loader)
 
 
 def worker_init_fn(pid):
@@ -169,7 +171,7 @@ def worker_init_fn(pid):
     random.seed(random_seed)
 
 
-def train(epoch, config, train_loader, net, loss, post_process, opt, val_loader=None):
+def train(epoch, config, train_loader, net, loss, post_process, opt, writer, val_loader=None):
     train_loader.sampler.set_epoch(int(epoch))
     net.train()
 
@@ -192,6 +194,10 @@ def train(epoch, config, train_loader, net, loss, post_process, opt, val_loader=
         loss_out['loss'] = loss_out['loss'].type(torch.FloatTensor)
         post_out = post_process(output, data)
         post_process.append(metrics, loss_out, post_out)
+
+        writer.add_scalar('loss', loss_out['loss'], global_step=epoch * len(train_loader))
+        writer.add_scalar('lane loss', loss_out['lane_loss'], global_step=epoch * len(train_loader))
+        writer.add_scalar('others', loss_out['loss'] - loss_out['lane_loss'], global_step=epoch * len(train_loader))
 
         opt.zero_grad()
         loss_out["loss"].backward()

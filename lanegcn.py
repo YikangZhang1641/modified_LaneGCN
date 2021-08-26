@@ -35,7 +35,7 @@ config["save_freq"] = 1.0
 config["epoch"] = 0
 config["horovod"] = True
 config["opt"] = "adam"
-config["num_epochs"] = 50
+config["num_epochs"] = 80
 config["lr"] = [1e-3, 1e-4]
 config["lr_epochs"] = [32]
 config["lr_func"] = StepLR(config["lr"], config["lr_epochs"])
@@ -747,42 +747,58 @@ class PredLoss(nn.Module):
         super(PredLoss, self).__init__()
         self.config = config
         self.reg_loss = nn.SmoothL1Loss(reduction="sum")
+        self.LaneWidth = 2.0
 
     def forward(self, out: Dict[str, List[Tensor]], gt_preds: List[Tensor], has_preds: List[Tensor], graph: Dict, rot: List[Tensor], orig: List[Tensor], Lanes: List[List[Tensor]]) -> Dict[str, Union[Tensor, int]]:
-        final_dis = []
+        out['lane_pts'] = []
+        avg_dis = []
         for idx in range(len(out['reg'])):
+            lane_pts_vehicle_id = []
             for vehicle_id in range(out['reg'][idx].shape[0]):
+                lane_pts_k = []
                 for k in range(self.config['num_mods']):
                     # Lanes = []
                     # traj = torch.matmul(out['reg'][idx][vehicle_id][k] - orig[idx], rot[idx].T)
                     traj = out['reg'][idx][vehicle_id][k]
-                    diff = traj[1:] - traj[:-1]
-                    S_pred = torch.sum(torch.sqrt(torch.sum(diff ** 2, axis=1))) * 0.9
+                    traj_list = list(range(0, traj.shape[0], traj.shape[0] // 9)) + [traj.shape[0] - 1]
+                    traj_10 = traj[traj_list]
+                    diff = traj_10[1:] - traj_10[:-1]
+                    S_pred = torch.zeros([diff.shape[0] + 1]).cuda()
+                    S_pred[1:] = torch.cumsum(torch.sqrt(torch.sum(diff ** 2, axis=1)), dim=0)
 
                     # map_car0 = graph[idx]['ctrs'] - traj[0]
                     # ego_graph_id = torch.argmin(torch.sum(map_car0 ** 2, 1))
                     # self.dfs(graph[idx], ego_graph_id, Lanes, [], 0, S_pred, 0)
 
-                    min_final_dis = []
+                    min_avg_dis = float('inf')
+                    min_lane_pts = None
                     for Lane in Lanes[idx][vehicle_id]:
                         if Lane is None:
                             continue
                         # min_final_dis.append(torch.sqrt(torch.sum((graph[idx]['ctrs'][Lane[-1]] - traj[-1]) ** 2)))
-                        map_car0 = Lane - traj[0]
+                        map_car0 = Lane - traj_10[0]
                         lane_start_id = torch.argmin(torch.sum(map_car0 ** 2, 1))
 
                         if lane_start_id == Lane.shape[0] - 1:
-                            final_pt_on_lane = Lane[-1]
+                            s_indices = -1 * torch.ones(S_pred.shape).cuda().long()
+                            avg_pt_on_lane = Lane[s_indices]
                         else:
                             lane = Lane[lane_start_id:]
                             s = torch.sum((lane[1:] - lane[:-1]) ** 2, axis=1).sqrt().cumsum(0)
-                            s_id = torch.argmin((s - S_pred) ** 2)
-                            final_pt_on_lane = lane[s_id]
+                            Lsize = s.shape[0]
+                            Tsize = S_pred.shape[0]
+                            s_indices = torch.argmin((s.reshape([Lsize, 1]).repeat([1, Tsize]) - S_pred) ** 2, dim=0)
+                            avg_pt_on_lane = lane[s_indices]
 
-                        min_final_dis.append(torch.sqrt(torch.sum((final_pt_on_lane - traj[-1]) ** 2)))
-
-                    final_dis.append(min(min_final_dis))
-        final_dis = torch.Tensor(final_dis).cuda()
+                        cur_avg_dis = torch.clamp(((avg_pt_on_lane - traj_10) ** 2).sum(1) - self.LaneWidth, min=0).sum()
+                        if min_avg_dis > cur_avg_dis:
+                            min_avg_dis = cur_avg_dis
+                            min_lane_pts = avg_pt_on_lane
+                    avg_dis.append(min_avg_dis)
+                    lane_pts_k.append(min_lane_pts)
+                lane_pts_vehicle_id.append(lane_pts_k)
+            out['lane_pts'].append(lane_pts_vehicle_id)
+        avg_dis = torch.Tensor(avg_dis).cuda()
 
 
         cls, reg = out["cls"], out["reg"]
@@ -845,7 +861,7 @@ class PredLoss(nn.Module):
             reg[has_preds], gt_preds[has_preds]
         )
         loss_out["num_reg"] += has_preds.sum().item()
-        loss_out["lane_loss"] = 0.01 * torch.sum(final_dis) / (final_dis.shape[0] + 1)
+        loss_out["lane_loss"] = torch.sum(avg_dis) / (avg_dis.shape[0] + 1) * 0.05
 
         return loss_out
 
