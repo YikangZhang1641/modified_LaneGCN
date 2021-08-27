@@ -804,7 +804,7 @@ class PredLoss(nn.Module):
         cls, reg = out["cls"], out["reg"]
         cls = torch.cat([x for x in cls], 0)
         reg = torch.cat([x for x in reg], 0)
-        gt_preds = torch.cat([x for x in gt_preds], 0)
+        gt_preds = torch.cat([x[..., :2] for x in gt_preds], 0)
         has_preds = torch.cat([x for x in has_preds], 0)
 
         loss_out = dict()
@@ -943,7 +943,7 @@ class PostProcess(nn.Module):
 def pred_metrics(preds, gt_preds, has_preds):
     assert has_preds.all()
     preds = np.asarray(preds, np.float32)
-    gt_preds = np.asarray(gt_preds, np.float32)
+    gt_preds = np.asarray(gt_preds[..., :2], np.float32)
 
     """batch_size x num_mods x num_preds"""
     err = np.sqrt(((preds - np.expand_dims(gt_preds, 1)) ** 2).sum(3))
