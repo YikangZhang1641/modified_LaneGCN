@@ -6,3 +6,5 @@ __pycache__/
 dataset/
 hd_maps.tar.gz
 map_files/
+*.ipynb
+

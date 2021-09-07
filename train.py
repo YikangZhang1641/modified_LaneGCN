@@ -69,7 +69,7 @@ def main():
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
     
-    data_dir = "/home/user/Projects/interaction_gyt/preprocess_results_10s_for_training_EEMG"
+    data_dir = "/home/user/Projects/interaction_gyt/preprocess_results_10s_for_training_EEMG_3d_feats"
     config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
