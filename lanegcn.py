@@ -31,7 +31,7 @@ config = dict()
 """Train"""
 config["display_iters"] = 312*4*32*2
 config["val_iters"] = 312*4*32*2
-config["save_freq"] = 1.0
+config["save_freq"] = 0.1
 config["epoch"] = 0
 config["horovod"] = True
 config["opt"] = "adam"
@@ -794,8 +794,9 @@ class PredLoss(nn.Module):
                         if min_avg_dis > cur_avg_dis:
                             min_avg_dis = cur_avg_dis
                             min_lane_pts = avg_pt_on_lane
-                    avg_dis.append(min_avg_dis)
-                    lane_pts_k.append(min_lane_pts)
+                    if min_avg_dis != float('inf'):
+                        avg_dis.append(min_avg_dis)
+                        lane_pts_k.append(min_lane_pts)
                 lane_pts_vehicle_id.append(lane_pts_k)
             out['lane_pts'].append(lane_pts_vehicle_id)
         avg_dis = torch.Tensor(avg_dis).cuda()
@@ -941,22 +942,46 @@ class PostProcess(nn.Module):
 
 
 def pred_metrics(preds, gt_preds, has_preds):
-    assert has_preds.all()
+    # assert has_preds.all()
+    # if not has_preds.all():
+    #     return -1, -1, -1, -1, -1
+
     preds = np.asarray(preds, np.float32)
     gt_preds = np.asarray(gt_preds[..., :2], np.float32)
 
     """batch_size x num_mods x num_preds"""
     err = np.sqrt(((preds - np.expand_dims(gt_preds, 1)) ** 2).sum(3))
 
-    ade1 = err[:, 0].mean()
-    fde1 = err[:, 0, -1].mean()
+    # ade1 = err[:, 0].mean()
+    # fde1 = err[:, 0, -1].mean()
+    #
+
+
+    ade_list, fde_list = [], []
+    min_idcs = 0
+    valid_cnt = 0
+    for k in range(6):
+        ade_k = err[:, k][has_preds].mean()
+        FD = []
+        for i in range(err.shape[0]):
+            if not has_preds[i].any():
+                continue
+            FD.append(err[i][k][has_preds[i]][-1])
+        fde_k = sum(FD)/len(FD)
+
+        if k == 0:
+            ade1 = ade_k
+            fde1 = fde_k
+        ade_list.append(ade_k)
+        fde_list.append(fde_k)
 
     min_idcs = err[:, :, -1].argmin(1)
     row_idcs = np.arange(len(min_idcs)).astype(np.int64)
     err = err[row_idcs, min_idcs]
-    ade = err.mean()
-    fde = err[:, -1].mean()
-    return ade1, fde1, ade, fde, min_idcs
+    ade_min = err.mean()
+    fde_min = err[:, -1].mean()
+
+    return sum(ade_list) / len(ade_list), sum(fde_list) / len(fde_list), ade_min, fde_min, min_idcs
 
 
 def get_model(pred_size=None):

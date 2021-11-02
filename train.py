@@ -69,7 +69,7 @@ def main():
     model = import_module(args.model)
     config, Dataset, collate_fn, net, loss, post_process, opt = model.get_model()
     
-    data_dir = "/home/user/Projects/interaction_gyt/preprocess_results_10s_for_training_EEMG_3d_feats"
+    data_dir = "/home/user/Projects/interaction_gyt/preprocess_challenge_4s"
     config["save_dir"] = os.path.join(data_dir, "results")
 
     if config["horovod"]:
@@ -89,7 +89,7 @@ def main():
 
     if args.eval:
         # Data loader for evaluation
-        dataset = InteDataset('/home/user/Projects/interaction_gyt/preprocess_results_10s_use_csv_EP0/test')
+        dataset = InteDataset('/home/user/Projects/interaction_gyt/preprocess_results_10s_for_testing_EEMG/test')
         val_sampler = DistributedSampler(
             dataset, num_replicas=hvd.size(), rank=hvd.rank()
         )
@@ -97,7 +97,7 @@ def main():
             dataset,
             batch_size=config["val_batch_size"],
             num_workers=config["val_workers"],
-            sampler=val_sampler,
+            # sampler=val_sampler,
             collate_fn=collate_fn,
             pin_memory=True,
         )
