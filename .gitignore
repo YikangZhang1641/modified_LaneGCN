@@ -7,4 +7,9 @@ dataset/
 hd_maps.tar.gz
 map_files/
 *.ipynb
-
+!test_interaction_diversity.ipynb
+!test_interaction-generalization.ipynb
+!VisulizeDataset.ipynb
+!test_interaction_10s_EP0_csv_GCN.ipynb
+!test_interaction_10s_EP0_csv_Multi.ipynb
+!test_interaction_10s_EP0_csv_Single.ipynb
